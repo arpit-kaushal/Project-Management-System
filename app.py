@@ -16,7 +16,7 @@ load_dotenv()
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', '08d8440116c5b8b558bd90d064310f2aeb9846ae028c3c89b66d4e289baa5fbe')
 
-# Database configuration for production - FIXED FOR RENDER
+# Database configuration for production
 database_url = os.environ.get('DATABASE_URL')
 if database_url:
     # Replace postgres:// with postgresql:// for SQLAlchemy
@@ -564,31 +564,40 @@ def fic_registration():
 
 @app.route('/send_otp', methods=['POST'])
 def send_otp():
-    email = request.json.get('email')
-    purpose = request.json.get('purpose', 'registration')
-    
-    if not email:
-        return jsonify({'success': False, 'message': 'Email is required'})
-    
-    # Generate OTP
-    otp_code = ''.join(secrets.choice('0123456789') for _ in range(6))
-    expires_at = datetime.utcnow() + timedelta(minutes=10)
-    
-    # Save OTP to database
-    otp = OTP(
-        email=email, 
-        otp=otp_code, 
-        purpose=purpose,
-        expires_at=expires_at
-    )
-    db.session.add(otp)
-    db.session.commit()
-    
-    # Send email
     try:
-        if purpose == 'password_reset':
-            subject = 'Password Reset OTP - Project Management System'
-            body = f'''You have requested to reset your password for the Project Management System.
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'message': 'No JSON data received'})
+        
+        email = data.get('email')
+        purpose = data.get('purpose', 'registration')
+        
+        if not email:
+            return jsonify({'success': False, 'message': 'Email is required'})
+        
+        # Validate email format
+        if '@' not in email or '.' not in email:
+            return jsonify({'success': False, 'message': 'Invalid email format'})
+        
+        # Generate OTP
+        otp_code = ''.join(secrets.choice('0123456789') for _ in range(6))
+        expires_at = datetime.utcnow() + timedelta(minutes=10)
+        
+        # Save OTP to database
+        otp = OTP(
+            email=email, 
+            otp=otp_code, 
+            purpose=purpose,
+            expires_at=expires_at
+        )
+        db.session.add(otp)
+        db.session.commit()
+        
+        # Send email
+        try:
+            if purpose == 'password_reset':
+                subject = 'Password Reset OTP - Project Management System'
+                body = f'''You have requested to reset your password for the Project Management System.
 
 Your OTP for password reset is: {otp_code}
 
@@ -596,17 +605,29 @@ This OTP will expire in 10 minutes.
 
 If you did not request a password reset, please ignore this email.
 '''
-        else:
-            subject = 'Your OTP for Registration - Project Management System'
-            body = f'Your OTP for registration is: {otp_code}. It will expire in 10 minutes.'
-        
-        msg = Message(subject, sender=app.config['MAIL_USERNAME'], recipients=[email])
-        msg.body = body
-        mail.send(msg)
-        return jsonify({'success': True, 'message': 'OTP sent successfully'})
+            else:
+                subject = 'Your OTP for Registration - Project Management System'
+                body = f'''Your OTP for registration is: {otp_code}
+
+This OTP will expire in 10 minutes.
+
+Please use this OTP to complete your registration.
+
+If you did not request this OTP, please ignore this email.
+'''
+            
+            msg = Message(subject, sender=app.config['MAIL_USERNAME'], recipients=[email])
+            msg.body = body
+            mail.send(msg)
+            print(f"OTP sent successfully to {email}: {otp_code}")
+            return jsonify({'success': True, 'message': 'OTP sent successfully'})
+        except Exception as e:
+            print(f"Email sending error: {e}")
+            return jsonify({'success': False, 'message': f'Failed to send OTP: {str(e)}'})
+            
     except Exception as e:
-        print(f"Email error: {e}")
-        return jsonify({'success': False, 'message': 'Failed to send OTP'})
+        print(f"OTP generation error: {e}")
+        return jsonify({'success': False, 'message': 'Server error occurred'})
 
 @app.route('/student/dashboard')
 @login_required
