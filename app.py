@@ -1,4 +1,3 @@
-import os
 from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, send_file
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from flask_mail import Mail, Message
@@ -6,6 +5,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
 import secrets
+import os
 from dotenv import load_dotenv
 import csv
 from io import StringIO
@@ -14,36 +14,19 @@ from io import StringIO
 load_dotenv()
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', '08d8440116c5b8b558bd90d064310f2aeb9846ae028c3c89b66d4e289baa5fbe')
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', '08d8440116c5b8b558bd90d064310f2aeb9846ae028c3c89b66d4e289baa5fbe')
 
-# Database configuration - FIXED FOR RENDER
-# Get database URL from environment (Render provides this)
-database_url = os.environ.get('DATABASE_URL')
-
-if database_url:
-    # Render provides DATABASE_URL in format: mysql://user:pass@host:port/dbname
-    # Convert to SQLAlchemy format with PyMySQL
-    if database_url.startswith('mysql://'):
-        database_url = database_url.replace('mysql://', 'mysql+pymysql://', 1)
-    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
-else:
-    # Fallback for local development
-    app.config['SQLALCHEMY_DATABASE_URI'] = f"mysql+pymysql://{os.getenv('MYSQL_USER', 'root')}:{os.getenv('MYSQL_PASSWORD', '')}@{os.getenv('MYSQL_HOST', 'localhost')}:{os.getenv('MYSQL_PORT', '3306')}/{os.getenv('MYSQL_DB', 'project_management_system')}"
-
+# Database configuration
+app.config['SQLALCHEMY_DATABASE_URI'] = f"mysql://{os.getenv('MYSQL_USER', 'root')}:{os.getenv('MYSQL_PASSWORD', '')}@{os.getenv('MYSQL_HOST', 'localhost')}:{os.getenv('MYSQL_PORT', '3306')}/{os.getenv('MYSQL_DB', 'project_management_system')}"
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-    'pool_recycle': 300,
-    'pool_pre_ping': True
-}
 
 # Email configuration
 app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
 app.config['MAIL_PORT'] = int(os.getenv('MAIL_PORT', 587))
 app.config['MAIL_USE_TLS'] = os.getenv('MAIL_USE_TLS', 'True').lower() == 'true'
-app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME', 'your-email@gmail.com')
-app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD', 'your-app-password')
+app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME', '2230239@kiit.ac.in')
+app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD', 'yvuv nhba anal xcwj')
 
-# Initialize extensions
 db = SQLAlchemy(app)
 mail = Mail(app)
 
@@ -52,8 +35,165 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 
-# Import models after db initialization to avoid circular imports
-from models import User, Student, Supervisor, FIC, StudentGroup, GroupInvite, SupervisorRequest, SupervisorChangeRequest, Panel, PanelMember, Marks, OTP, Notification
+# Models
+class User(db.Model):
+    __tablename__ = 'user'
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    password = db.Column(db.String(255), nullable=False)
+    role = db.Column(db.String(20), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Flask-Login required methods
+    def is_authenticated(self):
+        return True
+    
+    def is_active(self):
+        return True
+    
+    def is_anonymous(self):
+        return False
+    
+    def get_id(self):
+        return str(self.id)
+
+class Student(db.Model):
+    __tablename__ = 'student'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+    roll_number = db.Column(db.String(20), unique=True, nullable=False)
+    year = db.Column(db.String(10), nullable=False)
+    school = db.Column(db.String(100), nullable=False)
+    branch = db.Column(db.String(50), nullable=False)
+    group_id = db.Column(db.Integer, db.ForeignKey('student_group.id'))
+    
+    user = db.relationship('User', backref=db.backref('student', uselist=False))
+    group = db.relationship('StudentGroup', backref=db.backref('students', lazy=True))
+
+class Supervisor(db.Model):
+    __tablename__ = 'supervisor'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+    domain = db.Column(db.String(50), nullable=False)
+    school = db.Column(db.String(100), nullable=False)
+    
+    user = db.relationship('User', backref=db.backref('supervisor', uselist=False))
+    supervised_groups = db.relationship('StudentGroup', backref='supervisor', lazy=True)
+
+class FIC(db.Model):
+    __tablename__ = 'fic'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+    school = db.Column(db.String(100), nullable=False)
+    
+    user = db.relationship('User', backref=db.backref('fic', uselist=False))
+
+class StudentGroup(db.Model):
+    __tablename__ = 'student_group'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(20), unique=True, nullable=False)
+    supervisor_id = db.Column(db.Integer, db.ForeignKey('supervisor.id'))
+    project_title = db.Column(db.String(255))
+    project_description = db.Column(db.Text)
+    document_link = db.Column(db.String(500))
+    branch = db.Column(db.String(50), nullable=False)
+    year = db.Column(db.String(10), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class GroupInvite(db.Model):
+    __tablename__ = 'group_invite'
+    id = db.Column(db.Integer, primary_key=True)
+    sender_id = db.Column(db.Integer, db.ForeignKey('student.id'), nullable=False)
+    receiver_id = db.Column(db.Integer, db.ForeignKey('student.id'), nullable=False)
+    status = db.Column(db.String(20), default='pending')
+    sent_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    sender = db.relationship('Student', foreign_keys=[sender_id], backref='sent_invites')
+    receiver = db.relationship('Student', foreign_keys=[receiver_id], backref='received_invites')
+
+class SupervisorRequest(db.Model):
+    __tablename__ = 'supervisor_request'
+    id = db.Column(db.Integer, primary_key=True)
+    group_id = db.Column(db.Integer, db.ForeignKey('student_group.id'), nullable=False)
+    supervisor_id = db.Column(db.Integer, db.ForeignKey('supervisor.id'), nullable=False)
+    status = db.Column(db.String(20), default='pending')
+    sent_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    group = db.relationship('StudentGroup', backref='supervisor_requests')
+    supervisor = db.relationship('Supervisor', backref='received_requests')
+
+class SupervisorChangeRequest(db.Model):
+    __tablename__ = 'supervisor_change_request'
+    id = db.Column(db.Integer, primary_key=True)
+    group_id = db.Column(db.Integer, db.ForeignKey('student_group.id'), nullable=False)
+    current_supervisor_id = db.Column(db.Integer, db.ForeignKey('supervisor.id'), nullable=False)
+    new_supervisor_id = db.Column(db.Integer, db.ForeignKey('supervisor.id'), nullable=False)
+    status = db.Column(db.String(20), default='pending')  # pending, approved, rejected
+    reason = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    processed_at = db.Column(db.DateTime)
+    
+    group = db.relationship('StudentGroup', backref='supervisor_change_requests')
+    current_supervisor = db.relationship('Supervisor', foreign_keys=[current_supervisor_id])
+    new_supervisor = db.relationship('Supervisor', foreign_keys=[new_supervisor_id])
+
+class Panel(db.Model):
+    __tablename__ = 'panel'
+    id = db.Column(db.Integer, primary_key=True)
+    group_id = db.Column(db.Integer, db.ForeignKey('student_group.id'), nullable=False)
+    created_by = db.Column(db.Integer, db.ForeignKey('fic.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    group = db.relationship('StudentGroup', backref='panels')
+    fic = db.relationship('FIC', backref='created_panels')
+
+class PanelMember(db.Model):
+    __tablename__ = 'panel_member'
+    id = db.Column(db.Integer, primary_key=True)
+    panel_id = db.Column(db.Integer, db.ForeignKey('panel.id'), nullable=False)
+    supervisor_id = db.Column(db.Integer, db.ForeignKey('supervisor.id'), nullable=False)
+    
+    panel = db.relationship('Panel', backref='members')
+    supervisor = db.relationship('Supervisor', backref='panel_memberships')
+
+class Marks(db.Model):
+    __tablename__ = 'marks'
+    id = db.Column(db.Integer, primary_key=True)
+    student_id = db.Column(db.Integer, db.ForeignKey('student.id'), nullable=False)
+    presentation = db.Column(db.Float, default=0)
+    documents = db.Column(db.Float, default=0)
+    collaboration = db.Column(db.Float, default=0)
+    total = db.Column(db.Float, default=0)
+    given_by = db.Column(db.Integer, db.ForeignKey('supervisor.id'), nullable=False)
+    given_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    student = db.relationship('Student', backref='marks')
+    supervisor_given = db.relationship('Supervisor', backref='given_marks')
+
+class OTP(db.Model):
+    __tablename__ = 'otp'
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(120), nullable=False)
+    otp = db.Column(db.String(6), nullable=False)
+    purpose = db.Column(db.String(20), default='registration')  # 'registration' or 'password_reset'
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    used = db.Column(db.Boolean, default=False)
+
+class Notification(db.Model):
+    __tablename__ = 'notification'
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(255), nullable=False)
+    message = db.Column(db.Text, nullable=False)
+    target_type = db.Column(db.String(20), nullable=False)  # all, students, supervisors, specific_branch
+    target_branch = db.Column(db.String(50))
+    created_by = db.Column(db.Integer, db.ForeignKey('fic.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    fic = db.relationship('FIC', backref='sent_notifications')
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -1113,15 +1253,6 @@ def logout():
     logout_user()
     return redirect(url_for('index'))
 
-def initialize_database():
-    """Initialize database tables"""
-    try:
-        with app.app_context():
-            db.create_all()
-            print("Database tables created successfully")
-    except Exception as e:
-        print(f"Error creating tables: {e}")
-
 # Error handlers
 @app.errorhandler(404)
 def not_found_error(error):
@@ -1132,7 +1263,15 @@ def internal_error(error):
     db.session.rollback()
     return render_template('500.html'), 500
 
+
+
+# Update the main block to this:
 if __name__ == '__main__':
-    initialize_database()
+    with app.app_context():
+        # This will create all tables when the app starts
+        db.create_all()
+        print("Database tables created successfully")
+    
+    # Use environment variable for port (Render provides this)
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
