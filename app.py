@@ -16,13 +16,22 @@ load_dotenv()
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', '08d8440116c5b8b558bd90d064310f2aeb9846ae028c3c89b66d4e289baa5fbe')
 
-# Database configuration for production
-if os.environ.get('DATABASE_URL'):
-    app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL').replace('postgres://', 'postgresql://')
+# Database configuration for production - FIXED FOR RENDER
+database_url = os.environ.get('DATABASE_URL')
+if database_url:
+    # Replace postgres:// with postgresql:// for SQLAlchemy
+    if database_url.startswith('postgres://'):
+        database_url = database_url.replace('postgres://', 'postgresql://', 1)
+    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 else:
-    app.config['SQLALCHEMY_DATABASE_URI'] = f"mysql://{os.getenv('MYSQL_USER', 'root')}:{os.getenv('MYSQL_PASSWORD', '')}@{os.getenv('MYSQL_HOST', 'localhost')}:{os.getenv('MYSQL_PORT', '3306')}/{os.getenv('MYSQL_DB', 'project_management_system')}"
+    # Fallback for local development with PostgreSQL
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///project_management.db'
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'pool_recycle': 300,
+    'pool_pre_ping': True
+}
 
 # Email configuration
 app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
@@ -31,8 +40,13 @@ app.config['MAIL_USE_TLS'] = os.getenv('MAIL_USE_TLS', 'True').lower() == 'true'
 app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME', '')
 app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD', '')
 
-db = SQLAlchemy(app)
-mail = Mail(app)
+# Initialize extensions
+db = SQLAlchemy()
+mail = Mail()
+
+# Initialize app with extensions
+db.init_app(app)
+mail.init_app(app)
 
 # Login manager
 login_manager = LoginManager()
@@ -202,6 +216,15 @@ class Notification(db.Model):
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
+
+def init_db():
+    """Initialize database and create tables"""
+    with app.app_context():
+        try:
+            db.create_all()
+            print("✅ Database tables created successfully!")
+        except Exception as e:
+            print(f"❌ Database initialization error: {e}")
 
 # Routes
 @app.route('/')
@@ -1267,12 +1290,14 @@ def internal_error(error):
     db.session.rollback()
     return render_template('500.html'), 500
 
-# Update the main block to this:
+# Initialize database before first request
+@app.before_first_request
+def create_tables():
+    init_db()
+
+# Update the main block
 if __name__ == '__main__':
-    with app.app_context():
-        # This will create all tables when the app starts
-        db.create_all()
-        print("Database tables created successfully")
+    init_db()
     
     # Use environment variable for port (Render provides this)
     port = int(os.environ.get('PORT', 5000))
