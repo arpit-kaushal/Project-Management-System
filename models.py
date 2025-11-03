@@ -12,10 +12,9 @@ class User(UserMixin, db.Model):
     role = db.Column(db.String(20), nullable=False)  # student, supervisor, fic
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
-    # Relationships
-    student_profile = db.relationship('Student', backref='user', uselist=False, cascade='all, delete-orphan')
-    supervisor_profile = db.relationship('Supervisor', backref='user', uselist=False, cascade='all, delete-orphan')
-    fic_profile = db.relationship('FIC', backref='user', uselist=False, cascade='all, delete-orphan')
+    # Flask-Login required methods
+    def get_id(self):
+        return str(self.id)
 
 class Student(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -28,6 +27,7 @@ class Student(db.Model):
     group_id = db.Column(db.Integer, db.ForeignKey('student_group.id'))
     
     # Relationships
+    user = db.relationship('User', backref=db.backref('student', uselist=False))
     marks = db.relationship('Marks', backref='student', lazy=True, cascade='all, delete-orphan')
     sent_invites = db.relationship('GroupInvite', foreign_keys='GroupInvite.sender_id', backref='sender', lazy=True)
     received_invites = db.relationship('GroupInvite', foreign_keys='GroupInvite.receiver_id', backref='receiver', lazy=True)
@@ -40,6 +40,7 @@ class Supervisor(db.Model):
     school = db.Column(db.String(100), nullable=False)
     
     # Relationships
+    user = db.relationship('User', backref=db.backref('supervisor', uselist=False))
     supervised_groups = db.relationship('StudentGroup', backref='supervisor', lazy=True)
     panel_memberships = db.relationship('PanelMember', backref='supervisor', lazy=True, cascade='all, delete-orphan')
     given_marks = db.relationship('Marks', backref='given_by_supervisor', lazy=True)
@@ -52,7 +53,9 @@ class FIC(db.Model):
     school = db.Column(db.String(100), nullable=False)
     
     # Relationships
+    user = db.relationship('User', backref=db.backref('fic', uselist=False))
     created_panels = db.relationship('Panel', backref='created_by_fic', lazy=True)
+    sent_notifications = db.relationship('Notification', backref='fic', lazy=True)
 
 class StudentGroup(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -69,6 +72,7 @@ class StudentGroup(db.Model):
     students = db.relationship('Student', backref='group', lazy=True)
     supervisor_requests = db.relationship('SupervisorRequest', backref='group', lazy=True, cascade='all, delete-orphan')
     panels = db.relationship('Panel', backref='group', lazy=True, cascade='all, delete-orphan')
+    supervisor_change_requests = db.relationship('SupervisorChangeRequest', backref='group', lazy=True, cascade='all, delete-orphan')
 
 class SupervisorRequest(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -76,6 +80,19 @@ class SupervisorRequest(db.Model):
     supervisor_id = db.Column(db.Integer, db.ForeignKey('supervisor.id'), nullable=False)
     status = db.Column(db.String(20), default='pending')  # pending, accepted, rejected
     sent_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class SupervisorChangeRequest(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    group_id = db.Column(db.Integer, db.ForeignKey('student_group.id'), nullable=False)
+    current_supervisor_id = db.Column(db.Integer, db.ForeignKey('supervisor.id'), nullable=False)
+    new_supervisor_id = db.Column(db.Integer, db.ForeignKey('supervisor.id'), nullable=False)
+    status = db.Column(db.String(20), default='pending')  # pending, approved, rejected
+    reason = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    processed_at = db.Column(db.DateTime)
+    
+    current_supervisor = db.relationship('Supervisor', foreign_keys=[current_supervisor_id])
+    new_supervisor = db.relationship('Supervisor', foreign_keys=[new_supervisor_id])
 
 class GroupInvite(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -116,3 +133,12 @@ class OTP(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     expires_at = db.Column(db.DateTime, nullable=False)
     used = db.Column(db.Boolean, default=False)
+
+class Notification(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(255), nullable=False)
+    message = db.Column(db.Text, nullable=False)
+    target_type = db.Column(db.String(20), nullable=False)  # all, students, supervisors, specific_branch
+    target_branch = db.Column(db.String(50))
+    created_by = db.Column(db.Integer, db.ForeignKey('fic.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
