@@ -24,7 +24,7 @@ if database_url:
         database_url = database_url.replace('postgres://', 'postgresql://', 1)
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 else:
-    # Fallback for local development with PostgreSQL
+    # Fallback for local development with SQLite
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///project_management.db'
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -225,6 +225,9 @@ def init_db():
             print("✅ Database tables created successfully!")
         except Exception as e:
             print(f"❌ Database initialization error: {e}")
+
+# Initialize database when app starts
+init_db()
 
 # Routes
 @app.route('/')
@@ -1290,15 +1293,8 @@ def internal_error(error):
     db.session.rollback()
     return render_template('500.html'), 500
 
-# Initialize database before first request
-@app.before_first_request
-def create_tables():
-    init_db()
-
 # Update the main block
 if __name__ == '__main__':
-    init_db()
-    
     # Use environment variable for port (Render provides this)
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
