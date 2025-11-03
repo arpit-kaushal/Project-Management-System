@@ -1265,13 +1265,18 @@ def internal_error(error):
 
 
 
-# Update the main block to this:
+# Add this function to automatically create tables
+def initialize_database():
+    """Initialize database tables"""
+    try:
+        with app.app_context():
+            db.create_all()
+            print("Database tables created successfully")
+    except Exception as e:
+        print(f"Error creating tables: {e}")
+
+# Call this when the app starts
 if __name__ == '__main__':
-    with app.app_context():
-        # This will create all tables when the app starts
-        db.create_all()
-        print("Database tables created successfully")
-    
-    # Use environment variable for port (Render provides this)
+    initialize_database()
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
