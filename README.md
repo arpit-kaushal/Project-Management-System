@@ -1,5 +1,5 @@
 
-# Project Management System
+# Academic Project Management System
 
 A comprehensive web-based Project Management System designed for academic institutions to manage student projects, supervisors, and FIC (Faculty In Charge) coordination efficiently.
 
